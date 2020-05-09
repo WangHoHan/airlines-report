@@ -1,0 +1,167 @@
+
+---
+title: "analiza.Rmd"
+author: "Tomasz Adamczyk"
+date: "17 04 2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r, echo = FALSE}
+library(knitr)
+library(markdown)
+library(rmarkdown)
+library(RODBC)
+library(tinytex)
+con <- odbcConnect("Driver", uid = "", pwd = "")
+```
+
+# Zadanie 1
+Jakie było średnie opóźnienie przylotu?
+
+```{r}
+zadanie1 <- sqlQuery(con, "SELECT AVG(arr_delay_new) AS avg_delay FROM Flight_delays;")
+```
+
+```{r, echo = FALSE}
+kable(zadanie1)
+```
+
+# Zadanie 2
+Jakie było maksymalne opóźnienie przylotu?
+
+```{r}
+zadanie2 <- sqlQuery(con, "SELECT MAX(arr_delay_new) AS max_delay FROM Flight_delays;")
+```
+
+```{r, echo = FALSE}
+kable(zadanie2)
+```
+
+# Zadanie 3
+Który lot miał największe opóźnienie przylotu?
+[przewoźnik, miasto wylotu, miasto przylotu, data lotu, opóźnienie]
+
+```{r}
+zadanie3 <- sqlQuery(con, "SELECT TOP 1 carrier, origin_city_name, dest_city_name,
+                     fl_date, arr_delay_new FROM Flight_delays ORDER BY arr_delay_new
+                     DESC;")
+```
+
+```{r, echo = FALSE}
+kable(zadanie3)
+```
+
+# Zadanie 4
+Które dni tygodnia są najgorsze do podróżowania?
+[tabela zawierająca dla każdego dnia tygodnia średni czas opóźnienia]
+
+```{r}
+zadanie4 <- sqlQuery(con, "SELECT W.weekday_name, AVG(F.arr_delay_new) AS avg_delay FROM
+                     Weekdays W INNER JOIN Flight_delays F ON W.weekday_id = F.day_of_week
+                     GROUP BY W.weekday_name ORDER BY avg_delay DESC")
+```
+
+```{r, echo = FALSE}
+kable(zadanie4)
+```
+
+# Zadanie 5
+Które linie lotnicze latające z San Francisco (SFO) mają najmniejsze opóźnienia przylotu?
+[tabela zawierająca nazwę przewoźnika oraz średnie opóźnienie z jego wszystkich lotów]
+
+```{r}
+zadanie5 <- sqlQuery(con, "SELECT A.airline_name, AVG(F1.arr_delay_new) AS avg_delay FROM
+                     Airlines A INNER JOIN Flight_delays F ON A.airline_id = F.airline_id
+                     INNER JOIN Flight_delays F1 ON F.airline_id = F1.airline_id WHERE 
+                     F.origin = 'SFO' GROUP BY A.airline_name ORDER BY avg_delay DESC")
+```
+
+```{r, echo = FALSE}
+kable(zadanie5)
+```
+
+# Zadanie 6
+Jaka część linii lotniczych ma regularne opóźnienia, tj. jej lot ma średnio co najmniej 10 min. opóźnienia?
+[tylko linie lotnicze występujące w tabeli Flight_delays]
+
+```{r}
+zadanie6 <- sqlQuery(con, "SELECT (SELECT TOP 1 COUNT(*) OVER() FROM Flight_delays
+                     GROUP BY airline_id HAVING AVG(arr_delay_new) > 10) / CAST((SELECT 
+                     TOP 1 COUNT(*) OVER() FROM Flight_delays GROUP BY airline_id)
+                     AS REAL)  AS late_proportion")
+```
+
+```{r, echo = FALSE}
+kable(zadanie6)
+```
+
+# Zadanie 7
+Jak opóźnienia wylotów wpływają na opóźnienia przylotów?
+[współczynnik korelacji Pearsona między czasem opóźnienia wylotów a czasem opóźnienia przylotów]
+
+```{r}
+zadanie7 <- sqlQuery(con, "SELECT (AVG(dep_delay_new * arr_delay_new)
+                     - (AVG(dep_delay_new) * AVG(arr_delay_new))) / (STDEVP(dep_delay_new)
+                     * STDEVP(arr_delay_new)) AS 'Pearsons r' FROM Flight_delays")
+```
+
+```{r, echo = FALSE}
+kable(zadanie7)
+```
+
+# Zadanie 8
+Która linia lotnicza miała największy wzrost (różnica) średniego opóźnienia przylotów w ostatnim tygodniu miesiąca, tj. między 1-23 a 24-31 lipca?
+[nazwa przewoźnika oraz wzrost]
+
+```{r}
+zadanie8 <- sqlQuery(con, "SELECT TOP 1 S.airline_name, SUM(S.average_delay) AS 
+                     delay_increase FROM (SELECT A.airline_name, AVG(F.arr_delay_new) AS 
+                     average_delay FROM Flight_delays F INNER JOIN Airlines A ON 
+                     A.airline_id = F.airline_id WHERE (F.fl_date BETWEEN '2017-07-24' AND 
+                     '2017-07-31') GROUP BY A.airline_name UNION SELECT A.airline_name, 
+                     -AVG(F.arr_delay_new) AS average_delay FROM Flight_delays F 
+                     INNER JOIN Airlines A ON A.airline_id = F.airline_id WHERE (F.fl_date 
+                     BETWEEN '2017-07-01' AND '2017-07-23') GROUP BY A.airline_name) AS S 
+                     GROUP BY S.airline_name ORDER BY delay_increase DESC")
+```
+
+```{r, echo = FALSE}
+kable(zadanie8)
+```
+
+# Zadanie 9
+Które linie lotnicze latają zarówno na trasie SFO → PDX (Portland), jak i SFO → EUG (Eugene)?
+
+```{r}
+zadanie9 <- sqlQuery(con, "SELECT DISTINCT A.airline_name FROM Airlines A INNER JOIN 
+                     Flight_delays F ON A.airline_id = F.airline_id INNER JOIN 
+                     Flight_delays F1 ON F.airline_id = F1.airline_id WHERE (F.origin
+                     = 'SFO' AND F.dest = 'PDX') AND (F1.origin = 'SFO' AND F1.dest
+                     = 'EUG') ORDER BY A.airline_name ASC")
+```
+
+```{r, echo = FALSE}
+kable(zadanie9)
+```
+
+# Zadanie 10
+Jak najszybciej dostać się z Chicago do Stanfordu, zakładając wylot po 14:00 czasu lokalnego?
+[tabela zawierająca jako miejsce wylotu Midway (MDW) lub O'Hare (ORD), jako miejsce przylotu San Francisco (SFO), San Jose (SJC) lub Oakland (OAK) oraz średni czas opóźnienia przylotu dla wylotów po 14:00 czasu lokalnego (atrybut crs_dep_time); wyniki pogrupowane po miejscu wylotu i przylotu, posortowane malejąco]
+
+```{r}
+zadanie10 <- sqlQuery(con, "SELECT origin, dest, AVG(arr_delay_new) AS avg_delay FROM 
+                      Flight_delays WHERE (origin = 'MDW' OR origin = 'ORD') AND (dest
+                      = 'SFO' OR dest = 'SJC' OR dest = 'OAK') AND crs_dep_time > 1400 
+                      GROUP BY dest, origin ORDER BY avg_delay DESC")
+```
+
+```{r, echo = FALSE}
+kable(zadanie10)
+```
+
+```{r, echo = FALSE}
+odbcClose(con)
+```
